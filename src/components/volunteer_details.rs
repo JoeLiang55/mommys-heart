@@ -174,6 +174,7 @@ pub fn VolunteerDetailsPanel(
                 <DetailRow label="Date of birth" value=format_dob(&d.date_of_birth) />
                 {ssn_row()}
                 <DetailRow label="Phone" value=d.phone.clone() />
+                <DetailRow label="Home address" value=d.home_address.clone() />
                 <DetailRow label="Emergency contact" value=d.emergency_full_name() />
                 <DetailRow
                     label="Relationship to volunteer"
@@ -252,6 +253,20 @@ pub fn VolunteerDetailsPanel(
                             }
                         />
                     </div>
+                </div>
+
+                <div>
+                    <label class=LABEL_CLASS>"Home address"</label>
+                    <input
+                        class=INPUT_CLASS
+                        autocomplete="street-address"
+                        placeholder="Street, city, state, ZIP"
+                        prop:value=move || draft.get().home_address
+                        on:input=move |event| {
+                            let value = event_target_value(&event);
+                            draft.update(|d| d.home_address = value);
+                        }
+                    />
                 </div>
 
                 <div>

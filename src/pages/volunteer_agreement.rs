@@ -111,6 +111,9 @@ fn agreement_page(public: bool) -> AnyView {
                         if d.phone.is_empty() {
                             d.phone = contact.phone;
                         }
+                        if d.home_address.is_empty() {
+                            d.home_address = contact.home_address;
+                        }
                     });
                 }
             }
@@ -588,6 +591,23 @@ fn agreement_page(public: bool) -> AnyView {
                                         }
                                     />
                                 </div>
+                            </div>
+
+                            <div class="mt-5">
+                                <label class=LABEL_CLASS>
+                                    "Home address " <Required />
+                                </label>
+                                <input
+                                    class=INPUT_CLASS
+                                    autocomplete="street-address"
+                                    placeholder="Street, city, state, ZIP"
+                                    prop:disabled=move || !unlocked()
+                                    prop:value=move || details.get().home_address
+                                    on:input=move |event| {
+                                        let value = event_target_value(&event);
+                                        details.update(|d| d.home_address = value);
+                                    }
+                                />
                             </div>
 
                             <div class="mt-5">
