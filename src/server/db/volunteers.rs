@@ -95,6 +95,7 @@ struct VolunteerRow {
     guardian_relationship: String,
     guardian_email: String,
     signed_at: Option<chrono::DateTime<chrono::Utc>>,
+    electronic_consent: bool,
     resume_file_name: String,
     resume_size_bytes: i64,
     resume_uploaded_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -136,6 +137,7 @@ impl From<VolunteerRow> for VolunteerApplication {
                 guardian_relationship: row.guardian_relationship,
                 guardian_email: row.guardian_email,
                 signed_at: row.signed_at.map(stamp).unwrap_or_default(),
+                electronic_consent: row.electronic_consent,
             },
             agreed_at: stamp(row.agreed_at),
             decided_by_name: row.decided_by_name,
@@ -153,7 +155,7 @@ const SELECT_COLUMNS: &str =
      (ssn <> '') AS has_ssn, phone, home_address, emergency_first_name, emergency_last_name,
      emergency_relationship, emergency_phone, legal_name, signature_name,
      signer_is_guardian, guardian_name, guardian_relationship, guardian_email, signed_at,
-     resume_file_name, resume_size_bytes, resume_uploaded_at";
+     electronic_consent, resume_file_name, resume_size_bytes, resume_uploaded_at";
 
 /// One person's volunteer record, or `None` if they have never applied.
 pub async fn get(user_id: &str) -> Result<Option<VolunteerApplication>, sqlx::Error> {

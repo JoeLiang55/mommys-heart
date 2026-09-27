@@ -90,7 +90,8 @@ const SELECT_COLUMNS: &str =
      skills_focus, volunteer_role, to_char(date_of_birth, 'YYYY-MM-DD') AS date_of_birth,
      (ssn <> '') AS has_ssn, phone, home_address, emergency_first_name, emergency_last_name,
      emergency_relationship, emergency_phone, legal_name, signature_name,
-     signer_is_guardian, guardian_name, guardian_relationship, guardian_email, signed_at";
+     signer_is_guardian, guardian_name, guardian_relationship, guardian_email, signed_at,
+     electronic_consent";
 
 #[derive(sqlx::FromRow)]
 struct ApplicantRow {
@@ -123,6 +124,7 @@ struct ApplicantRow {
     guardian_relationship: String,
     guardian_email: String,
     signed_at: Option<chrono::DateTime<chrono::Utc>>,
+    electronic_consent: bool,
 }
 
 impl From<ApplicantRow> for VolunteerApplicant {
@@ -157,6 +159,7 @@ impl From<ApplicantRow> for VolunteerApplicant {
                 guardian_relationship: row.guardian_relationship,
                 guardian_email: row.guardian_email,
                 signed_at: row.signed_at.map(stamp).unwrap_or_default(),
+                electronic_consent: row.electronic_consent,
             },
         }
     }
