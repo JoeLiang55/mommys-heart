@@ -88,7 +88,7 @@ const SELECT_COLUMNS: &str =
     "id, first_name, last_name, email, agreement_version, agreed_at, status, assigned_email,
      decided_by_name, decision_note, decided_at,
      skills_focus, volunteer_role, to_char(date_of_birth, 'YYYY-MM-DD') AS date_of_birth,
-     (ssn <> '') AS has_ssn, phone, emergency_first_name, emergency_last_name,
+     (ssn <> '') AS has_ssn, phone, home_address, emergency_first_name, emergency_last_name,
      emergency_relationship, emergency_phone, legal_name, signature_name,
      signer_is_guardian, guardian_name, guardian_relationship, guardian_email, signed_at";
 
@@ -111,6 +111,7 @@ struct ApplicantRow {
     /// Whether a number is on file. Never the number itself.
     has_ssn: bool,
     phone: String,
+    home_address: String,
     emergency_first_name: String,
     emergency_last_name: String,
     emergency_relationship: String,
@@ -144,6 +145,7 @@ impl From<ApplicantRow> for VolunteerApplicant {
                 date_of_birth: row.date_of_birth.unwrap_or_default(),
                 has_ssn: row.has_ssn,
                 phone: row.phone,
+                home_address: row.home_address,
                 emergency_first_name: row.emergency_first_name,
                 emergency_last_name: row.emergency_last_name,
                 emergency_relationship: row.emergency_relationship,
@@ -178,10 +180,10 @@ pub async fn create(
              emergency_first_name, emergency_last_name, emergency_relationship,
              emergency_phone, legal_name, signature_name, signer_is_guardian,
              guardian_name, guardian_relationship, guardian_email,
-             electronic_consent, signed_at
+             electronic_consent, signed_at, home_address
          )
          VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, NULLIF($8, '')::date, $9, $10,
-                 $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, now())",
+                 $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, now(), $22)",
     )
     .bind(&id)
     .bind(first_name)
@@ -204,6 +206,7 @@ pub async fn create(
     .bind(&details.guardian_relationship)
     .bind(&details.guardian_email)
     .bind(details.electronic_consent)
+    .bind(&details.home_address)
     .execute(pool())
     .await?;
     Ok(id)
@@ -375,16 +378,24 @@ pub async fn complete(token: &str, password_hash: &str) -> Result<(String, Strin
 
     // Claim the token. Only the fields the `users` row needs come back; every
     // other column is copied across in SQL below, so the SSN is never read out.
-    let claimed: Option<(String, String, String, String, String, String)> = sqlx::query_as(
+    let claimed: Option<(String, String, String, String, String, String, String)> = sqlx::query_as(
         "UPDATE volunteer_applicants SET status = 'completed', setup_token_hash = NULL
          WHERE setup_token_hash = $1 AND status = 'approved' AND setup_expires_at > now()
-         RETURNING id, first_name, last_name, email, assigned_email, phone",
+         RETURNING id, first_name, last_name, email, assigned_email, phone, home_address",
     )
     .bind(hash(token))
     .fetch_optional(&mut *tx)
     .await?;
 
-    let Some((applicant_id, first_name, last_name, original_email, assigned_email, phone)) = claimed
+    let Some((
+        applicant_id,
+        first_name,
+        last_name,
+        original_email,
+        assigned_email,
+        phone,
+        home_address,
+    )) = claimed
     else {
         return Err(Error::InvalidSetupToken);
     };
@@ -415,7 +426,7 @@ pub async fn complete(token: &str, password_hash: &str) -> Result<(String, Strin
         &last_name,
         &sign_in_email,
         &phone,
-        "",
+        &home_address,
         password_hash,
         AccountRole::Volunteer,
     )
@@ -436,7 +447,7 @@ pub async fn complete(token: &str, password_hash: &str) -> Result<(String, Strin
              emergency_first_name, emergency_last_name, emergency_relationship,
              emergency_phone, volunteer_role, legal_name, signature_name,
              signer_is_guardian, guardian_name, guardian_relationship, guardian_email,
-             electronic_consent, signed_at
+             electronic_consent, signed_at, home_address
          )
          SELECT $1, 'approved', a.agreement_version, a.agreed_at, a.decided_by,
                 a.decided_by_name, a.decision_note, a.decided_at, a.skills_focus,
@@ -444,7 +455,7 @@ pub async fn complete(token: &str, password_hash: &str) -> Result<(String, Strin
                 a.emergency_last_name, a.emergency_relationship, a.emergency_phone,
                 a.volunteer_role, a.legal_name, a.signature_name, a.signer_is_guardian,
                 a.guardian_name, a.guardian_relationship, a.guardian_email,
-                a.electronic_consent, a.signed_at
+                a.electronic_consent, a.signed_at, a.home_address
          FROM volunteer_applicants a WHERE a.id = $2",
     )
     .bind(&user_id)
@@ -468,6 +479,7 @@ pub async fn complete(token: &str, password_hash: &str) -> Result<(String, Strin
             last_name,
             email: sign_in_email.clone(),
             phone,
+            address: home_address,
             types: vec![ContactType::Volunteer],
             source: "Volunteer signup".to_string(),
             ..Default::default()

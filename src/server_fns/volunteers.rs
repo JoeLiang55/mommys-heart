@@ -222,6 +222,7 @@ pub async fn save_my_volunteer_details(
         date_of_birth: details.date_of_birth,
         has_ssn: !details.ssn.is_empty() || existing.details.has_ssn,
         phone: details.phone,
+        home_address: details.home_address,
         emergency_first_name: details.emergency_first_name,
         emergency_last_name: details.emergency_last_name,
         emergency_relationship: details.emergency_relationship,

@@ -81,6 +81,7 @@ struct VolunteerRow {
     /// Whether a number is on file. Never the number itself.
     has_ssn: bool,
     phone: String,
+    home_address: String,
     emergency_first_name: String,
     emergency_last_name: String,
     emergency_relationship: String,
@@ -111,6 +112,7 @@ impl From<VolunteerRow> for VolunteerApplication {
                 date_of_birth: row.date_of_birth.unwrap_or_default(),
                 has_ssn: row.has_ssn,
                 phone: row.phone,
+                home_address: row.home_address,
                 emergency_first_name: row.emergency_first_name,
                 emergency_last_name: row.emergency_last_name,
                 emergency_relationship: row.emergency_relationship,
@@ -135,7 +137,7 @@ impl From<VolunteerRow> for VolunteerApplication {
 const SELECT_COLUMNS: &str =
     "status, agreement_version, agreed_at, decided_by_name, decision_note, decided_at,
      skills_focus, volunteer_role, to_char(date_of_birth, 'YYYY-MM-DD') AS date_of_birth,
-     (ssn <> '') AS has_ssn, phone, emergency_first_name, emergency_last_name,
+     (ssn <> '') AS has_ssn, phone, home_address, emergency_first_name, emergency_last_name,
      emergency_relationship, emergency_phone, legal_name, signature_name,
      signer_is_guardian, guardian_name, guardian_relationship, guardian_email, signed_at";
 
@@ -176,10 +178,10 @@ pub async fn apply(
              phone, emergency_first_name, emergency_last_name, emergency_relationship,
              emergency_phone, volunteer_role, legal_name, signature_name,
              signer_is_guardian, guardian_name, guardian_relationship, guardian_email,
-             electronic_consent, signed_at
+             electronic_consent, signed_at, home_address
          )
          VALUES ($1, $2, $3, $4, NULLIF($5, '')::date, $6, $7, $8, $9, $10, $11,
-                 $12, $13, $14, $15, $16, $17, $18, $19, now())
+                 $12, $13, $14, $15, $16, $17, $18, $19, now(), $20)
          ON CONFLICT (user_id) DO UPDATE SET
              status = EXCLUDED.status,
              agreement_version = EXCLUDED.agreement_version,
@@ -191,6 +193,7 @@ pub async fn apply(
              -- cannot echo it back and an empty box must not erase it.
              ssn = CASE WHEN EXCLUDED.ssn = '' THEN volunteers.ssn ELSE EXCLUDED.ssn END,
              phone = EXCLUDED.phone,
+             home_address = EXCLUDED.home_address,
              emergency_first_name = EXCLUDED.emergency_first_name,
              emergency_last_name = EXCLUDED.emergency_last_name,
              emergency_relationship = EXCLUDED.emergency_relationship,
@@ -228,10 +231,12 @@ pub async fn apply(
     .bind(&details.guardian_relationship)
     .bind(&details.guardian_email)
     .bind(details.electronic_consent)
+    .bind(&details.home_address)
     .execute(&mut *tx)
     .await?;
 
     sync_user_phone(&mut tx, user_id, &details.phone, actor).await?;
+    sync_user_home_address(&mut tx, user_id, &details.home_address, actor).await?;
 
     tx.commit().await?;
     Ok(())
@@ -255,6 +260,7 @@ pub async fn save_details(
         String,
         String,
         String,
+        String,
     );
 
     let mut tx = pool().begin().await?;
@@ -262,7 +268,7 @@ pub async fn save_details(
     let current = sqlx::query_as::<_, DetailsRow>(
         "SELECT skills_focus, volunteer_role, to_char(date_of_birth, 'YYYY-MM-DD'), (ssn <> ''),
                 phone, emergency_first_name, emergency_last_name, emergency_relationship,
-                emergency_phone
+                emergency_phone, home_address
          FROM volunteers WHERE user_id = $1 FOR UPDATE",
     )
     .bind(user_id)
@@ -278,6 +284,7 @@ pub async fn save_details(
         emergency_last_name,
         emergency_relationship,
         emergency_phone,
+        home_address,
     )) = current
     else {
         return Ok(());
@@ -293,7 +300,8 @@ pub async fn save_details(
              emergency_last_name = $7,
              emergency_relationship = $8,
              emergency_phone = $9,
-             volunteer_role = $10
+             volunteer_role = $10,
+             home_address = $11
          WHERE user_id = $1",
     )
     .bind(user_id)
@@ -306,6 +314,7 @@ pub async fn save_details(
     .bind(&details.emergency_relationship)
     .bind(&details.emergency_phone)
     .bind(&details.volunteer_role)
+    .bind(&details.home_address)
     .execute(&mut *tx)
     .await?;
 
@@ -318,6 +327,11 @@ pub async fn save_details(
             &details.date_of_birth,
         ),
         ("volunteer phone", phone, &details.phone),
+        (
+            "volunteer home address",
+            home_address,
+            &details.home_address,
+        ),
         (
             "volunteer emergency contact first name",
             emergency_first_name,
@@ -370,6 +384,7 @@ pub async fn save_details(
     }
 
     sync_user_phone(&mut tx, user_id, &details.phone, actor).await?;
+    sync_user_home_address(&mut tx, user_id, &details.home_address, actor).await?;
 
     tx.commit().await?;
     Ok(())
@@ -406,6 +421,46 @@ async fn sync_user_phone(
         "phone",
         &current,
         phone,
+    )
+    .await
+}
+
+/// Copy the volunteer's home address onto their user record when it differs,
+/// auditing the change. This is what makes it visible on the profile page, whose
+/// contact block reads `users.home_address`. A blank address never overwrites
+/// one already on file.
+async fn sync_user_home_address(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: &str,
+    home_address: &str,
+    actor: &str,
+) -> Result<(), sqlx::Error> {
+    if home_address.is_empty() {
+        return Ok(());
+    }
+    let current: Option<String> = sqlx::query_scalar("SELECT home_address FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+    let Some(current) = current else {
+        return Ok(());
+    };
+    if current == home_address {
+        return Ok(());
+    }
+    sqlx::query("UPDATE users SET home_address = $1 WHERE id = $2")
+        .bind(home_address)
+        .bind(user_id)
+        .execute(&mut **tx)
+        .await?;
+    audit::record_in_transaction(
+        tx,
+        audit::Entity::User,
+        user_id,
+        actor,
+        "home_address",
+        &current,
+        home_address,
     )
     .await
 }
