@@ -11,7 +11,11 @@ use printpdf::{
 };
 
 use crate::helpers::volunteer_details::{format_dob, VolunteerDetailsView};
-use crate::helpers::volunteer_terms::{VOLUNTEER_AGREEMENT_SECTIONS, VOLUNTEER_AGREEMENT_VERSION};
+use crate::helpers::volunteer_terms::{
+    CONSENT_CHECKBOX_LABEL, ELECTRONIC_CONSENT, ELECTRONIC_CONSENT_HEADING, ELECTRONIC_EXECUTION,
+    ELECTRONIC_EXECUTION_HEADING, FOUNDATION_SIGNATORY, FOUNDATION_SIGNATORY_TITLE,
+    VOLUNTEER_AGREEMENT_SECTIONS, VOLUNTEER_AGREEMENT_VERSION, VOLUNTEER_ATTESTATION,
+};
 use crate::server_fns::volunteers::VolunteerApplication;
 
 /// US Letter, with a comfortable margin on every side.
@@ -303,7 +307,11 @@ pub fn render(name: &str, email: &str, volunteer: &VolunteerApplication) -> Vec<
     layout.field("Relationship to volunteer", &details.emergency_relationship);
     layout.field("Emergency contact phone", &details.emergency_phone);
 
-    signature_block(&mut layout, details);
+    signature_block(
+        &mut layout,
+        details,
+        volunteer.agreement_version == VOLUNTEER_AGREEMENT_VERSION,
+    );
 
     layout.heading("Agreement text");
     if volunteer.agreement_version == VOLUNTEER_AGREEMENT_VERSION {
@@ -338,8 +346,50 @@ pub fn render(name: &str, email: &str, volunteer: &VolunteerApplication) -> Vec<
         .save(&PdfSaveOptions::default(), &mut Vec::new())
 }
 
-/// The electronic signature the agreement was accepted with.
-fn signature_block(layout: &mut Layout, details: &VolunteerDetailsView) {
+/// The electronic signature the agreement was accepted with, together with the
+/// attestation and consent wording it was given under. `current_wording` is
+/// false for an acceptance recording an older version, where that wording is
+/// omitted rather than misrepresenting what the signer saw.
+fn signature_block(layout: &mut Layout, details: &VolunteerDetailsView, current_wording: bool) {
+    layout.heading("Attestation");
+    if current_wording {
+        layout.paragraph(VOLUNTEER_ATTESTATION, BODY_SIZE, false, 0.0);
+
+        layout.heading(ELECTRONIC_CONSENT_HEADING);
+        layout.paragraph(ELECTRONIC_CONSENT, BODY_SIZE, false, 0.0);
+
+        layout.gap(3.0);
+        // The marker evidences the box the signer actually ticked rather than
+        // merely asserting that they did.
+        let marker = if details.electronic_consent {
+            "[X]"
+        } else {
+            "[ ]"
+        };
+        layout.paragraph(
+            &format!("{marker} {CONSENT_CHECKBOX_LABEL}"),
+            BODY_SIZE,
+            false,
+            0.0,
+        );
+    } else {
+        layout.paragraph(
+            "The attestation and electronic consent wording accepted with this signature belongs to an earlier version of the agreement and is omitted here rather than shown in wording the signer never saw.",
+            BODY_SIZE,
+            false,
+            0.0,
+        );
+        layout.gap(2.0);
+        layout.field(
+            "Acknowledgment box",
+            if details.electronic_consent {
+                "Checked at signing"
+            } else {
+                "Not recorded"
+            },
+        );
+    }
+
     layout.heading("Electronic signature");
     layout.paragraph(
         "The signer typed the name below and acknowledged that it is their electronic signature, with the same effect as a handwritten one.",
@@ -368,4 +418,17 @@ fn signature_block(layout: &mut Layout, details: &VolunteerDetailsView) {
     layout.rule(90.0);
     layout.line("Electronic signature", FOOTER_SIZE, false, 0.0);
     layout.field("Signed on", &details.signed_at);
+
+    layout.heading("For Mommy\u{2019}s Heart, Inc.");
+    layout.gap(4.0);
+    layout.line(FOUNDATION_SIGNATORY, 13.0, false, 0.0);
+    layout.rule(90.0);
+    layout.line("Countersignature", FOOTER_SIZE, false, 0.0);
+    layout.field("Name", FOUNDATION_SIGNATORY);
+    layout.field("Title", FOUNDATION_SIGNATORY_TITLE);
+
+    if current_wording {
+        layout.heading(ELECTRONIC_EXECUTION_HEADING);
+        layout.paragraph(ELECTRONIC_EXECUTION, BODY_SIZE, false, 0.0);
+    }
 }

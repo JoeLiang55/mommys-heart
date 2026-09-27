@@ -210,6 +210,9 @@ pub struct VolunteerDetailsView {
     /// Pre-formatted date and time of submission; only ever shown.
     #[serde(default)]
     pub signed_at: String,
+    /// Whether the acknowledgment box was ticked at signing.
+    #[serde(default)]
+    pub electronic_consent: bool,
 }
 
 impl VolunteerDetailsView {
