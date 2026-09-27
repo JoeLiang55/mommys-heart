@@ -10,7 +10,9 @@ use std::fmt;
 use crate::helpers::volunteer_details::{VolunteerDetails, VolunteerDetailsView};
 use crate::server::db::{audit, contacts, pool, users};
 use crate::server_fns::users::AccountRole;
-use crate::server_fns::volunteers::{Volunteer, VolunteerApplication, VolunteerStatus};
+use crate::server_fns::volunteers::{
+    Volunteer, VolunteerApplication, VolunteerResume, VolunteerStatus,
+};
 
 /// How timestamps are rendered for display. These are shown, never compared.
 const STAMP: &str = "%Y-%m-%d %H:%M";
@@ -92,6 +94,9 @@ struct VolunteerRow {
     guardian_relationship: String,
     guardian_email: String,
     signed_at: Option<chrono::DateTime<chrono::Utc>>,
+    resume_file_name: String,
+    resume_size_bytes: i64,
+    resume_uploaded_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 fn stamp(at: chrono::DateTime<chrono::Utc>) -> String {
@@ -100,6 +105,13 @@ fn stamp(at: chrono::DateTime<chrono::Utc>) -> String {
 
 impl From<VolunteerRow> for VolunteerApplication {
     fn from(row: VolunteerRow) -> Self {
+        // A recorded name is what says a resume is on file; the bytes are in the
+        // document library, not here.
+        let resume = (!row.resume_file_name.is_empty()).then(|| VolunteerResume {
+            file_name: row.resume_file_name.clone(),
+            size_bytes: row.resume_size_bytes,
+            uploaded_at: row.resume_uploaded_at.map(stamp).unwrap_or_default(),
+        });
         Self {
             // An unparseable status would mean the CHECK constraint was bypassed;
             // treat it as pending so it surfaces in the admin queue for a human.
@@ -127,6 +139,7 @@ impl From<VolunteerRow> for VolunteerApplication {
             decided_by_name: row.decided_by_name,
             decision_note: row.decision_note,
             decided_at: row.decided_at.map(stamp).unwrap_or_default(),
+            resume,
         }
     }
 }
@@ -137,7 +150,8 @@ const SELECT_COLUMNS: &str =
      skills_focus, volunteer_role, to_char(date_of_birth, 'YYYY-MM-DD') AS date_of_birth,
      (ssn <> '') AS has_ssn, phone, emergency_first_name, emergency_last_name,
      emergency_relationship, emergency_phone, legal_name, signature_name,
-     signer_is_guardian, guardian_name, guardian_relationship, guardian_email, signed_at";
+     signer_is_guardian, guardian_name, guardian_relationship, guardian_email, signed_at,
+     resume_file_name, resume_size_bytes, resume_uploaded_at";
 
 /// One person's volunteer record, or `None` if they have never applied.
 pub async fn get(user_id: &str) -> Result<Option<VolunteerApplication>, sqlx::Error> {
@@ -471,6 +485,61 @@ pub async fn list_pending() -> Result<Vec<Volunteer>, sqlx::Error> {
             agreed_at: stamp(row.agreed_at),
         })
         .collect())
+}
+
+/// The library item id of the resume on file, empty when there is none.
+///
+/// Kept out of [`VolunteerApplication`] deliberately: the id is how the server
+/// reaches the file, and nothing in the browser has any use for it.
+pub async fn resume_item_id(user_id: &str) -> Result<String, sqlx::Error> {
+    Ok(
+        sqlx::query_scalar("SELECT resume_item_id FROM volunteers WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(pool())
+            .await?
+            .unwrap_or_default(),
+    )
+}
+
+/// Record the resume just filed in the library, replacing any previous one.
+pub async fn set_resume(
+    user_id: &str,
+    file_name: &str,
+    item_id: &str,
+    size_bytes: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE volunteers SET
+             resume_file_name = $2,
+             resume_item_id = $3,
+             resume_size_bytes = $4,
+             resume_uploaded_at = now()
+         WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .bind(file_name)
+    .bind(item_id)
+    .bind(size_bytes)
+    .execute(pool())
+    .await?;
+    Ok(())
+}
+
+/// Forget the resume on file. The file itself is deleted by the caller; this is
+/// only the pointer.
+pub async fn clear_resume(user_id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE volunteers SET
+             resume_file_name = '',
+             resume_item_id = '',
+             resume_size_bytes = 0,
+             resume_uploaded_at = NULL
+         WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .execute(pool())
+    .await?;
+    Ok(())
 }
 
 /// How many applications are waiting on a decision.
