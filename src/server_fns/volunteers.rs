@@ -65,6 +65,29 @@ impl VolunteerStatus {
     }
 }
 
+/// The resume a volunteer has on file, as the profile shows it. The bytes live
+/// in the document library; this is only what is needed to describe and fetch
+/// the file.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct VolunteerResume {
+    pub file_name: String,
+    pub size_bytes: i64,
+    /// Pre-formatted for display; only ever shown, never compared.
+    pub uploaded_at: String,
+}
+
+impl VolunteerResume {
+    /// The size as a person would write it, e.g. `1.4 MB`.
+    pub fn size_label(&self) -> String {
+        let bytes = self.size_bytes.max(0) as f64;
+        if bytes >= 1024.0 * 1024.0 {
+            format!("{:.1} MB", bytes / (1024.0 * 1024.0))
+        } else {
+            format!("{:.0} KB", (bytes / 1024.0).ceil())
+        }
+    }
+}
+
 /// One person's volunteer record: the agreement they accepted, the details they
 /// gave with it, and the state of their application.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -82,6 +105,10 @@ pub struct VolunteerApplication {
     pub decided_by_name: String,
     pub decision_note: String,
     pub decided_at: String,
+    /// Their resume, when one has been uploaded. Only approved volunteers can
+    /// have one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume: Option<VolunteerResume>,
 }
 
 impl VolunteerApplication {

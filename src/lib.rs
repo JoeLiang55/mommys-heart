@@ -37,6 +37,7 @@ pub mod components {
     pub mod property_rows;
     pub mod volunteer_details;
     pub mod volunteer_hours;
+    pub mod volunteer_resume;
 }
 
 pub mod pages {

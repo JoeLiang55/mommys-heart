@@ -19,11 +19,13 @@ use crate::components::layout::Layout;
 use crate::components::loading::Loading;
 use crate::components::volunteer_details::VolunteerDetailsPanel;
 use crate::components::volunteer_hours::VolunteerHoursPanel;
+use crate::components::volunteer_resume::VolunteerResumePanel;
 use crate::helpers::format::badge_pill;
 use crate::helpers::volunteer_terms::{VOLUNTEER_AGREEMENT_SECTIONS, VOLUNTEER_AGREEMENT_VERSION};
 use crate::server_fns::err_text;
 use crate::server_fns::profile::{load_profile, save_my_profile, ProfileEdit, UserProfile};
 use crate::server_fns::users::AccountRole;
+use crate::server_fns::volunteers::VolunteerStatus;
 use crate::state::AppState;
 
 const INPUT_CLASS: &str = "w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/40";
@@ -373,6 +375,29 @@ pub fn ProfilePage() -> impl IntoView {
             .into_any()
         };
 
+        // The resume, for approved volunteers only. An application that has not
+        // been decided (or was declined) has nowhere to file one, which is the
+        // same rule the server enforces on upload.
+        let volunteer_resume = move || {
+            let Some(p) = profile.get() else {
+                return ().into_any();
+            };
+            let Some(volunteer) = p.volunteer.clone() else {
+                return ().into_any();
+            };
+            if volunteer.status != VolunteerStatus::Approved {
+                return ().into_any();
+            }
+            view! {
+                <VolunteerResumePanel
+                    initial_resume=volunteer.resume
+                    user_id=p.id.clone()
+                    is_self=p.is_self
+                />
+            }
+            .into_any()
+        };
+
         // The volunteer agreement on file, for the owner and for admins. The
         // wording is only rendered when the accepted version matches this build:
         // showing the current text for an older acceptance would misrepresent
@@ -640,6 +665,7 @@ pub fn ProfilePage() -> impl IntoView {
                     {volunteer_hours}
                     {become_volunteer}
                     {volunteer_details}
+                    {volunteer_resume}
                     {volunteer_agreement}
                     {person_record}
                     {shared}

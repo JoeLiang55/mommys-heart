@@ -40,6 +40,8 @@ pub struct GraphStore {
     drive_id: String,
     /// Where in the library the app's own subtree begins.
     root_folder: String,
+    /// Where volunteers' own folders begin, a sibling of `root_folder`.
+    volunteer_root_folder: String,
     site_url: String,
     token: RwLock<Option<CachedToken>>,
 }
@@ -62,6 +64,7 @@ impl GraphStore {
             client_secret: cfg.client_secret.clone(),
             drive_id: String::new(),
             root_folder: cfg.root_folder.clone(),
+            volunteer_root_folder: cfg.volunteer_root_folder.clone(),
             site_url: cfg.site_url.clone(),
             token: RwLock::new(None),
         };
@@ -267,7 +270,7 @@ impl DocumentStore for GraphStore {
         }
     }
 
-    async fn ensure_root(&self) -> Result<FolderRef, String> {
+    async fn ensure_named_root(&self, name: &str) -> Result<FolderRef, String> {
         let library_root = self
             .get_json(&format!("{}/root", self.drive()))
             .await
@@ -275,7 +278,15 @@ impl DocumentStore for GraphStore {
         let root_id = library_root["id"]
             .as_str()
             .ok_or_else(|| "library root had no id".to_string())?;
-        self.ensure_folder(root_id, &self.root_folder).await
+        self.ensure_folder(root_id, name).await
+    }
+
+    async fn ensure_root(&self) -> Result<FolderRef, String> {
+        self.ensure_named_root(&self.root_folder).await
+    }
+
+    async fn ensure_volunteer_root(&self) -> Result<FolderRef, String> {
+        self.ensure_named_root(&self.volunteer_root_folder).await
     }
 
     async fn list_children(&self, item_id: &str) -> Result<Vec<DocumentEntry>, String> {
@@ -441,7 +452,10 @@ impl DocumentStore for GraphStore {
         }
         let status = response.status();
         let detail = response.text().await.unwrap_or_default();
-        Err(format!("revoke failed ({status}): {}", trim_detail(&detail)))
+        Err(format!(
+            "revoke failed ({status}): {}",
+            trim_detail(&detail)
+        ))
     }
 
     fn describe(&self) -> String {
@@ -461,8 +475,7 @@ async fn json_or_error(response: reqwest::Response) -> Result<serde_json::Value,
         if text.is_empty() {
             return Ok(serde_json::Value::Null);
         }
-        return serde_json::from_str(&text)
-            .map_err(|e| format!("response was not JSON: {e}"));
+        return serde_json::from_str(&text).map_err(|e| format!("response was not JSON: {e}"));
     }
     let detail = serde_json::from_str::<serde_json::Value>(&text)
         .ok()

@@ -546,29 +546,48 @@ fn notify_documents_changed(
 
 /// Validate size and content-sniffed type, returning the canonical MIME type to
 /// store (derived from the bytes, never from the client's declared type).
+///
+/// The cap and the allowlist are arguments because other features file into the
+/// same library under narrower rules (a volunteer resume is PDF or Word, and
+/// smaller), and only one place should decide whether bytes are acceptable.
 #[cfg(feature = "ssr")]
-fn validate_bytes(bytes: &[u8]) -> Result<&'static str, String> {
+pub(crate) fn validate_upload(
+    bytes: &[u8],
+    max_bytes: usize,
+    allowed: &[&str],
+    described: &str,
+) -> Result<&'static str, String> {
     if bytes.is_empty() {
         return Err("The uploaded file is empty.".to_string());
     }
-    if bytes.len() > MAX_SIZE_BYTES {
+    if bytes.len() > max_bytes {
         return Err(format!(
             "File is too large ({:.1} MB); the limit is {} MB.",
             bytes.len() as f64 / (1024.0 * 1024.0),
-            MAX_SIZE_BYTES / (1024 * 1024)
+            max_bytes / (1024 * 1024)
         ));
     }
-    let kind = infer::get(bytes).ok_or_else(|| {
-        "Unrecognized file type. Allowed: PDF, images, and Office documents.".to_string()
-    })?;
+    let kind = infer::get(bytes)
+        .ok_or_else(|| format!("Unrecognized file type. Allowed: {described}."))?;
     let mime = kind.mime_type();
-    if ALLOWED_MIME.contains(&mime) {
+    if allowed.contains(&mime) {
         Ok(mime)
     } else {
         Err(format!(
-            "File type '{mime}' is not allowed. Allowed: PDF, images, and Office documents."
+            "File type '{mime}' is not allowed. Allowed: {described}."
         ))
     }
+}
+
+/// Validate an upload against the case-document rules.
+#[cfg(feature = "ssr")]
+fn validate_bytes(bytes: &[u8]) -> Result<&'static str, String> {
+    validate_upload(
+        bytes,
+        MAX_SIZE_BYTES,
+        ALLOWED_MIME,
+        "PDF, images, and Office documents",
+    )
 }
 
 /// Reduce a client-supplied filename to a safe name: strip any path components
@@ -683,7 +702,9 @@ mod download {
         let relative = segments.join("/");
         let item_id = match store.resolve_path(&folder.item_id, &relative).await {
             Ok(Some(id)) => id,
-            Ok(None) => return (StatusCode::NOT_FOUND, "That file no longer exists.").into_response(),
+            Ok(None) => {
+                return (StatusCode::NOT_FOUND, "That file no longer exists.").into_response()
+            }
             Err(e) => return (StatusCode::BAD_GATEWAY, e).into_response(),
         };
 

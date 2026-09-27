@@ -29,6 +29,7 @@ const STORE_DIR: &str = "target/sharepoint";
 pub struct LocalStore {
     root: PathBuf,
     root_folder: String,
+    volunteer_root_folder: String,
     /// Serializes access to `permissions.json`.
     ///
     /// Granting and revoking are a read-modify-write of one file, and
@@ -43,13 +44,13 @@ pub struct LocalStore {
 impl LocalStore {
     pub fn new(cfg: &SharePointConfig) -> Result<Self, String> {
         let root = PathBuf::from(STORE_DIR);
-        std::fs::create_dir_all(&root)
-            .map_err(|e| format!("could not create {STORE_DIR}: {e}"))?;
+        std::fs::create_dir_all(&root).map_err(|e| format!("could not create {STORE_DIR}: {e}"))?;
         Ok(Self {
             root: root
                 .canonicalize()
                 .map_err(|e| format!("could not resolve {STORE_DIR}: {e}"))?,
             root_folder: cfg.root_folder.clone(),
+            volunteer_root_folder: cfg.volunteer_root_folder.clone(),
             permissions_lock: Mutex::new(()),
         })
     }
@@ -112,8 +113,16 @@ impl DocumentStore for LocalStore {
         })
     }
 
+    async fn ensure_named_root(&self, name: &str) -> Result<FolderRef, String> {
+        self.ensure_folder("", name).await
+    }
+
     async fn ensure_root(&self) -> Result<FolderRef, String> {
-        self.ensure_folder("", &self.root_folder).await
+        self.ensure_named_root(&self.root_folder).await
+    }
+
+    async fn ensure_volunteer_root(&self) -> Result<FolderRef, String> {
+        self.ensure_named_root(&self.volunteer_root_folder).await
     }
 
     async fn list_children(&self, item_id: &str) -> Result<Vec<DocumentEntry>, String> {

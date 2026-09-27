@@ -97,6 +97,10 @@ pub struct SharePointConfig {
     pub library: String,
     /// Folder inside the library under which every case folder is created.
     pub root_folder: String,
+    /// Folder inside the library under which each volunteer's own folder is
+    /// created. A sibling of `root_folder`, never inside it, so a volunteer's
+    /// paperwork cannot be reached through a case path.
+    pub volunteer_root_folder: String,
     /// Which store backs case documents: `graph` (the real library) or `local`
     /// (a directory tree, for development).
     pub backend: String,
@@ -113,6 +117,7 @@ impl SharePointConfig {
                 .to_string(),
             library: env("SHAREPOINT_LIBRARY", "Documents"),
             root_folder: env("SHAREPOINT_ROOT_FOLDER", "Cases"),
+            volunteer_root_folder: env("SHAREPOINT_VOLUNTEER_ROOT_FOLDER", "Volunteers"),
             backend: env("SHAREPOINT_BACKEND", "graph").to_ascii_lowercase(),
         }
     }
