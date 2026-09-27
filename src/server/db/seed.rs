@@ -84,10 +84,10 @@ async fn seed() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                          user_id, status, agreement_version, decided_by_name, skills_focus,
                          date_of_birth, ssn, phone, emergency_first_name, emergency_last_name,
                          emergency_relationship, emergency_phone, volunteer_role, legal_name,
-                         signature_name, electronic_consent, signed_at
+                         signature_name, electronic_consent, signed_at, home_address
                      )
                      VALUES ($1, 'approved', $2, 'Seed', $3, NULLIF($4, '')::date, $5, $6, $7, $8, $9, $10,
-                             $11, $12, $13, $14, CASE WHEN $14 THEN now() ELSE NULL END)",
+                             $11, $12, $13, $14, CASE WHEN $14 THEN now() ELSE NULL END, $15)",
                 )
                 .bind(&u.id)
                 .bind(if signed {
@@ -119,6 +119,11 @@ async fn seed() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     String::new()
                 })
                 .bind(signed)
+                .bind(if signed {
+                    u.home_address.as_str()
+                } else {
+                    ""
+                })
                 .execute(pool)
                 .await?;
             }

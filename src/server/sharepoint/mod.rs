@@ -30,6 +30,7 @@
 pub mod graph;
 pub mod local;
 pub mod sync;
+pub mod volunteers;
 
 pub use sync::sync_case_access;
 
@@ -100,9 +101,19 @@ pub trait DocumentStore: Send + Sync {
     /// already there. Idempotent, so provisioning can be retried.
     async fn ensure_folder(&self, parent_id: &str, name: &str) -> Result<FolderRef, String>;
 
-    /// The root of the library subtree the app owns (`SHAREPOINT_ROOT_FOLDER`),
-    /// creating it if absent.
+    /// Create `name` directly under the library root, or return it if it is
+    /// already there. The app owns two such roots — the case root and the
+    /// volunteer root — so this is named rather than fixed.
+    async fn ensure_named_root(&self, name: &str) -> Result<FolderRef, String>;
+
+    /// The root of the library subtree case folders live in
+    /// (`SHAREPOINT_ROOT_FOLDER`), creating it if absent.
     async fn ensure_root(&self) -> Result<FolderRef, String>;
+
+    /// The root of the library subtree volunteer folders live in
+    /// (`SHAREPOINT_VOLUNTEER_ROOT_FOLDER`), creating it if absent. A sibling
+    /// of the case root, so nothing filed here is reachable by a case path.
+    async fn ensure_volunteer_root(&self) -> Result<FolderRef, String>;
 
     /// The entries directly inside `item_id`, folders first then files, each
     /// alphabetically.
@@ -152,6 +163,9 @@ pub trait DocumentStore: Send + Sync {
 /// the filing code that writes into it, and the paths the browser addresses
 /// those documents by.
 pub const CASE_NOTES_FOLDER: &str = "Case Notes";
+
+/// The folder inside a volunteer's own folder their resume is filed in.
+pub const RESUME_FOLDER: &str = "Resume";
 
 /// Whether a document store is available at all.
 pub fn is_configured() -> bool {
@@ -234,9 +248,7 @@ pub fn clean_name(raw: &str) -> Result<String, String> {
         return Err("Give the folder a name.".to_string());
     }
     if name.chars().count() > MAX_NAME_LEN {
-        return Err(format!(
-            "Names are limited to {MAX_NAME_LEN} characters."
-        ));
+        return Err(format!("Names are limited to {MAX_NAME_LEN} characters."));
     }
     if name.contains(['/', '\\']) || name.chars().any(char::is_control) {
         return Err("A name cannot contain slashes.".to_string());
@@ -294,7 +306,16 @@ pub fn visibility_of(segments: &[String]) -> Option<Visibility> {
 /// share a name, and findable by a human who only has the case id. The case
 /// name is sanitized because it is user-supplied.
 pub fn case_folder_name(case_id: &str, case_name: &str) -> String {
-    let cleaned: String = case_name
+    person_folder_name(case_id, case_name, "Case")
+}
+
+/// A folder name of the form `Display name (id)`, sanitized for the library.
+///
+/// Shared by case folders and volunteer folders: both want a human-readable
+/// name that stays unique and findable when two of them are called the same
+/// thing. `fallback` names the folder when the display name sanitizes away.
+pub fn person_folder_name(id: &str, display_name: &str, fallback: &str) -> String {
+    let cleaned: String = display_name
         .chars()
         .map(|c| {
             if c == '/' || c == '\\' || "*:<>?\"|#%".contains(c) || c.is_control() {
@@ -308,8 +329,8 @@ pub fn case_folder_name(case_id: &str, case_name: &str) -> String {
     let cleaned: String = cleaned.chars().take(80).collect();
     let cleaned = cleaned.trim_matches('.').trim();
     if cleaned.is_empty() {
-        format!("Case ({case_id})")
+        format!("{fallback} ({id})")
     } else {
-        format!("{cleaned} ({case_id})")
+        format!("{cleaned} ({id})")
     }
 }

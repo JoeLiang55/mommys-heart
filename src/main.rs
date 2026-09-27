@@ -126,6 +126,7 @@ async fn main() {
 
     // Wire the case-documents HTTP surface
     let app = server_fns::documents::install(app);
+    let app = server_fns::volunteer_documents::install(app);
     let app = api::volunteer_agreement::install(app);
     let app = api::message_transcripts::install(app)
         .fallback(leptos_axum::file_and_error_handler(shell))

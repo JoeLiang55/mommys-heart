@@ -295,6 +295,7 @@ pub fn render(name: &str, email: &str, volunteer: &VolunteerApplication) -> Vec<
     layout.field("Volunteer role", &details.volunteer_role);
     layout.field("Date of birth", &format_dob(&details.date_of_birth));
     layout.field("Phone", &details.phone);
+    layout.field("Home address", &details.home_address);
     layout.field(
         "Social Security Number",
         if details.has_ssn {

@@ -37,6 +37,9 @@ pub struct VolunteerDetails {
     /// the profile edit form an empty value means "keep the number on file".
     pub ssn: String,
     pub phone: String,
+    /// Where the volunteer lives. Required, as a single free-text line.
+    #[serde(default)]
+    pub home_address: String,
     pub emergency_first_name: String,
     pub emergency_last_name: String,
     pub emergency_relationship: String,
@@ -71,6 +74,7 @@ impl VolunteerDetails {
             date_of_birth: self.date_of_birth.trim().to_string(),
             ssn: digits(&self.ssn),
             phone: normalize_phone(&self.phone),
+            home_address: self.home_address.trim().to_string(),
             emergency_first_name: self.emergency_first_name.trim().to_string(),
             emergency_last_name: self.emergency_last_name.trim().to_string(),
             emergency_relationship: self.emergency_relationship.trim().to_string(),
@@ -102,6 +106,9 @@ impl VolunteerDetails {
             return Err(
                 "Enter your phone number as 10 digits, for example (555) 123-4567.".to_string(),
             );
+        }
+        if self.home_address.trim().is_empty() {
+            return Err("Please give your home address.".to_string());
         }
         if self.emergency_first_name.trim().is_empty() || self.emergency_last_name.trim().is_empty()
         {
@@ -191,6 +198,8 @@ pub struct VolunteerDetailsView {
     /// Whether a Social Security Number is on file. Never the number itself.
     pub has_ssn: bool,
     pub phone: String,
+    #[serde(default)]
+    pub home_address: String,
     pub emergency_first_name: String,
     pub emergency_last_name: String,
     pub emergency_relationship: String,
@@ -222,6 +231,7 @@ impl VolunteerDetailsView {
         !self.skills_focus.is_empty()
             || !self.date_of_birth.is_empty()
             || self.has_ssn
+            || !self.home_address.is_empty()
             || !self.emergency_first_name.is_empty()
             || !self.emergency_last_name.is_empty()
             || !self.emergency_phone.is_empty()
@@ -236,6 +246,7 @@ impl VolunteerDetailsView {
             date_of_birth: self.date_of_birth.clone(),
             ssn: String::new(),
             phone: self.phone.clone(),
+            home_address: self.home_address.clone(),
             emergency_first_name: self.emergency_first_name.clone(),
             emergency_last_name: self.emergency_last_name.clone(),
             emergency_relationship: self.emergency_relationship.clone(),
