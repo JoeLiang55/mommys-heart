@@ -180,6 +180,17 @@ impl DocumentStore for LocalStore {
         }
     }
 
+    async fn resolve_folder(&self, root_id: &str, path: &str) -> Result<Option<FolderRef>, String> {
+        let Some(item_id) = self.resolve_path(root_id, path).await? else {
+            return Ok(None);
+        };
+        let resolved = self.resolve(&item_id)?;
+        Ok(Some(FolderRef {
+            item_id,
+            web_url: format!("file://{}", resolved.display()),
+        }))
+    }
+
     async fn upload(
         &self,
         parent_id: &str,
@@ -275,4 +286,70 @@ fn format_modified(meta: &std::fs::Metadata) -> String {
     };
     let stamp: chrono::DateTime<chrono::Local> = modified.into();
     stamp.format("%Y-%m-%d %H:%M").to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn folder_metadata_preserves_local_navigation_and_uploads() {
+        let root =
+            std::env::temp_dir().join(format!("mommys-heart-resolver-{}", rand::random::<u64>()));
+        std::fs::create_dir(&root).unwrap();
+        let store = LocalStore {
+            root: root.canonicalize().unwrap(),
+            root_folder: String::new(),
+            volunteer_root_folder: String::new(),
+            permissions_lock: Mutex::new(()),
+        };
+        let case = store.ensure_folder("", "case-root").await.unwrap();
+        let category = store
+            .ensure_folder(&case.item_id, "Client Emails and Text Messages")
+            .await
+            .unwrap();
+        let nested = store
+            .ensure_folder(&category.item_id, "Nested")
+            .await
+            .unwrap();
+        for (path, expected) in [
+            ("", &case),
+            ("Client Emails and Text Messages", &category),
+            ("Client Emails and Text Messages/Nested", &nested),
+        ] {
+            let found = store
+                .resolve_folder(&case.item_id, path)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(&found, expected);
+            assert_eq!(
+                store.resolve_path(&case.item_id, path).await.unwrap(),
+                Some(found.item_id)
+            );
+            assert!(!found.web_url.starts_with("https://"));
+        }
+        store
+            .upload(
+                &nested.item_id,
+                "message.txt",
+                b"message".to_vec(),
+                "text/plain",
+            )
+            .await
+            .unwrap();
+        let entries = store.list_children(&nested.item_id).await.unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "message.txt");
+        assert!(store
+            .resolve_folder(&case.item_id, "Missing")
+            .await
+            .unwrap()
+            .is_none());
+        assert!(store
+            .resolve_folder(&case.item_id, "../outside")
+            .await
+            .is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

@@ -217,6 +217,37 @@ impl GraphStore {
         json_or_error(response).await
     }
 
+    async fn resolve_folder_in_drive(
+        &self,
+        drive: &str,
+        root_id: &str,
+        path: &str,
+    ) -> Result<Option<FolderRef>, String> {
+        let url = if path.is_empty() {
+            format!("{drive}/items/{root_id}")
+        } else {
+            let encoded = path
+                .split('/')
+                .map(encode_path_segment)
+                .collect::<Vec<_>>()
+                .join("/");
+            format!("{drive}/items/{root_id}:/{encoded}")
+        };
+        let token = self.token().await?;
+        let response = self
+            .http
+            .get(&url)
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(|e| format!("request failed: {e}"))?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let item = json_or_error(response).await?;
+        Ok(item["id"].as_str().map(|_| folder_ref(&item)))
+    }
+
     /// A folder's children, or `None` when the folder itself is missing.
     async fn child_named(
         &self,
@@ -314,25 +345,15 @@ impl DocumentStore for GraphStore {
         if path.is_empty() {
             return Ok(Some(root_id.to_string()));
         }
-        let encoded = path
-            .split('/')
-            .map(encode_path_segment)
-            .collect::<Vec<_>>()
-            .join("/");
-        let url = format!("{}/items/{root_id}:/{encoded}", self.drive());
-        let token = self.token().await?;
-        let response = self
-            .http
-            .get(&url)
-            .bearer_auth(token)
-            .send()
+        Ok(self
+            .resolve_folder(root_id, path)
+            .await?
+            .map(|folder| folder.item_id))
+    }
+
+    async fn resolve_folder(&self, root_id: &str, path: &str) -> Result<Option<FolderRef>, String> {
+        self.resolve_folder_in_drive(&self.drive(), root_id, path)
             .await
-            .map_err(|e| format!("request failed: {e}"))?;
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Ok(None);
-        }
-        let item = json_or_error(response).await?;
-        Ok(item["id"].as_str().map(str::to_string))
     }
 
     async fn upload(
@@ -493,6 +514,124 @@ fn folder_ref(item: &serde_json::Value) -> FolderRef {
     FolderRef {
         item_id: item["id"].as_str().unwrap_or_default().to_string(),
         web_url: item["webUrl"].as_str().unwrap_or_default().to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{extract::Request, http::StatusCode, routing::any, Json, Router};
+
+    async fn resolve_mock(
+        path: &str,
+        expected_request: &str,
+        status: StatusCode,
+        body: serde_json::Value,
+    ) -> Result<Option<FolderRef>, String> {
+        let expected_request = expected_request.to_string();
+        let app = Router::new().fallback(any(move |request: Request| {
+            assert_eq!(request.uri().to_string(), expected_request);
+            assert_eq!(request.headers()["authorization"], "Bearer test-token");
+            let body = body.clone();
+            async move { (status, Json(body)) }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let drive = format!(
+            "http://{}/drives/test-drive",
+            listener.local_addr().unwrap()
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let store = GraphStore {
+            http: reqwest::Client::builder()
+                .no_proxy()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+            tenant_id: String::new(),
+            client_id: String::new(),
+            client_secret: String::new(),
+            drive_id: "test-drive".to_string(),
+            root_folder: String::new(),
+            volunteer_root_folder: String::new(),
+            site_url: String::new(),
+            token: RwLock::new(Some(CachedToken {
+                value: "test-token".to_string(),
+                expires_at: Instant::now() + Duration::from_secs(3600),
+            })),
+        };
+        let result = store
+            .resolve_folder_in_drive(&drive, "case-root", path)
+            .await;
+        server.abort();
+        result
+    }
+
+    #[tokio::test]
+    async fn resolves_root_categories_and_nested_folder_with_graph_urls() {
+        let mut paths = vec![String::new()];
+        paths.extend(
+            crate::helpers::new_case_folders::NEW_CASE_FOLDERS
+                .iter()
+                .map(|f| f.name.to_string()),
+        );
+        paths.extend([
+            "Intake/Service Agreement".to_string(),
+            "Supporting Documents/Court Orders".to_string(),
+            "Supporting Documents/Other/A & B #1".to_string(),
+        ]);
+        for (index, path) in paths.iter().enumerate() {
+            let request = if path.is_empty() {
+                "/drives/test-drive/items/case-root".to_string()
+            } else {
+                format!(
+                    "/drives/test-drive/items/case-root:/{}",
+                    path.replace(' ', "%20")
+                        .replace('&', "%26")
+                        .replace('#', "%23")
+                )
+            };
+            let id = format!("resolved-{index}");
+            // Deliberately unrelated to the path: the URL must come from Graph.
+            let url = format!("https://tenant.sharepoint.com/:f:/r/canonical-{index}?csf=1&web=1");
+            let found = resolve_mock(
+                path,
+                &request,
+                StatusCode::OK,
+                json!({ "id": id, "webUrl": url }),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(found.item_id, id);
+            assert_eq!(found.web_url, url);
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_folder_stays_missing() {
+        let found = resolve_mock(
+            "Intake/Missing",
+            "/drives/test-drive/items/case-root:/Intake/Missing",
+            StatusCode::NOT_FOUND,
+            json!({"error": {"message": "missing"}}),
+        )
+        .await
+        .unwrap();
+        assert!(found.is_none());
+    }
+
+    #[tokio::test]
+    async fn graph_permission_failure_is_not_a_root_folder_fallback() {
+        let error = resolve_mock(
+            "Intake",
+            "/drives/test-drive/items/case-root:/Intake",
+            StatusCode::FORBIDDEN,
+            json!({"error": {"message": "denied"}}),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains("403"));
+        assert!(error.contains("denied"));
     }
 }
 

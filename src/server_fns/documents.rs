@@ -200,8 +200,8 @@ pub async fn list_case_documents(
 
     let store = sharepoint::store().map_err(ServerFnError::new)?;
     let relative = segments.join("/");
-    let Some(item_id) = store
-        .resolve_path(&folder.item_id, &relative)
+    let Some(selected_folder) = store
+        .resolve_folder(&folder.item_id, &relative)
         .await
         .map_err(ServerFnError::new)?
     else {
@@ -209,7 +209,7 @@ pub async fn list_case_documents(
     };
 
     let raw = store
-        .list_children(&item_id)
+        .list_children(&selected_folder.item_id)
         .await
         .map_err(ServerFnError::new)?;
 
@@ -251,7 +251,7 @@ pub async fn list_case_documents(
         entries,
         visibility,
         ready: true,
-        web_url: folder.web_url,
+        web_url: selected_folder.web_url,
         can_upload,
         can_delete,
     })
