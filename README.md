@@ -24,8 +24,8 @@ anyone else is using.
 Without SharePoint configuration, documents use the on-disk store under
 `target/sharepoint/`. Folder navigation, uploads, downloads, and permissions
 work locally, but this store returns `file://` paths rather than SharePoint
-URLs. The Documents panel shows **Open in SharePoint** disabled alongside a
-local-storage explanation. A working link requires a real SharePoint URL;
+URLs. The Documents panel shows **Open in SharePoint unavailable: stored locally.**
+as plain text. A working link requires a real SharePoint URL;
 the local store cannot provide one.
 
 To verify SharePoint links end to end, use a development SharePoint library

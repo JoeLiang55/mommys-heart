@@ -200,12 +200,17 @@ pub async fn list_case_documents(
 
     let store = sharepoint::store().map_err(ServerFnError::new)?;
     let relative = segments.join("/");
-    let Some(selected_folder) = store
-        .resolve_folder(&folder.item_id, &relative)
-        .await
-        .map_err(ServerFnError::new)?
-    else {
-        return Err(ServerFnError::new("That folder no longer exists."));
+    let selected_folder = if relative.is_empty() {
+        sharepoint::FolderRef {
+            item_id: folder.item_id,
+            web_url: folder.web_url,
+        }
+    } else {
+        store
+            .resolve_item(&folder.item_id, &relative)
+            .await
+            .map_err(ServerFnError::new)?
+            .ok_or_else(|| ServerFnError::new("That folder no longer exists."))?
     };
 
     let raw = store

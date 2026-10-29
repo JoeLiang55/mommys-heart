@@ -39,22 +39,12 @@ pub(crate) fn case_documents_sharepoint_link(found: &CaseDocumentListing) -> Any
         .into_any()
     } else {
         let reason = if found.web_url.starts_with("file://") {
-            "Stored locally; no SharePoint link is available."
+            "Open in SharePoint unavailable: stored locally."
         } else {
-            "No SharePoint link is available for this folder."
+            "Open in SharePoint unavailable: no link for this folder."
         };
         view! {
-            <div class="flex flex-wrap items-center gap-2 text-xs">
-                <button
-                    type="button"
-                    disabled
-                    title=reason
-                    class="cursor-not-allowed font-medium text-slate-500"
-                >
-                    "Open in SharePoint \u{2197}"
-                </button>
-                <span class="text-slate-500">{reason}</span>
-            </div>
+            <span class="text-xs text-slate-500">{reason}</span>
         }
         .into_any()
     }

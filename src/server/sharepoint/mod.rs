@@ -122,11 +122,19 @@ pub trait DocumentStore: Send + Sync {
     /// Resolve a path *relative to* `root_id` to an item id. `None` when any
     /// step is missing. Callers must have validated the path with
     /// [`clean_relative_path`] first.
-    async fn resolve_path(&self, root_id: &str, path: &str) -> Result<Option<String>, String>;
+    async fn resolve_path(&self, root_id: &str, path: &str) -> Result<Option<String>, String> {
+        if path.is_empty() {
+            return Ok(Some(root_id.to_string()));
+        }
+        Ok(self
+            .resolve_item(root_id, path)
+            .await?
+            .map(|item| item.item_id))
+    }
 
-    /// Resolve a validated relative path to its item id and browser URL.
+    /// Resolve a validated relative path to a file or folder's item id and browser URL.
     /// An empty path returns the root item's current metadata.
-    async fn resolve_folder(&self, root_id: &str, path: &str) -> Result<Option<FolderRef>, String>;
+    async fn resolve_item(&self, root_id: &str, path: &str) -> Result<Option<FolderRef>, String>;
 
     /// Upload `bytes` as `filename` into `parent_id`, replacing any file of the
     /// same name.
