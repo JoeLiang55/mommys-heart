@@ -608,6 +608,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn open_in_sharepoint_uses_nested_folder_url_instead_of_parent_or_case_root() {
+        use crate::pages::cases::case_documents_sharepoint_link;
+        use crate::server_fns::documents::CaseDocumentListing;
+        use leptos::prelude::*;
+
+        let case_url = "https://tenant.sharepoint.com/sites/CaseFiles/case-root";
+        let parent_url = "https://tenant.sharepoint.com/sites/CaseFiles/supporting-documents";
+        let nested_url = "https://tenant.sharepoint.com/:f:/r/police-reports?web=1";
+
+        for (path, request, id, expected_url) in [
+            (
+                "",
+                "/drives/test-drive/items/case-root",
+                "case-root",
+                case_url,
+            ),
+            (
+                "Supporting Documents",
+                "/drives/test-drive/items/case-root:/Supporting%20Documents",
+                "supporting-documents",
+                parent_url,
+            ),
+            (
+                "Supporting Documents/Police Reports",
+                "/drives/test-drive/items/case-root:/Supporting%20Documents/Police%20Reports",
+                "police-reports",
+                nested_url,
+            ),
+        ] {
+            let selected = resolve_mock(
+                path,
+                request,
+                StatusCode::OK,
+                json!({ "id": id, "folder": {}, "webUrl": expected_url }),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(selected.item_id, id);
+            let listing = CaseDocumentListing {
+                path: path.to_string(),
+                ready: true,
+                web_url: selected.web_url,
+                ..Default::default()
+            };
+            let html = case_documents_sharepoint_link(&listing).to_html();
+            assert!(html.contains("Open in SharePoint"));
+            assert!(html.contains(&format!("href=\"{expected_url}\"")), "{html}");
+            if path == "Supporting Documents/Police Reports" {
+                assert!(!html.contains(case_url), "{html}");
+                assert!(!html.contains(parent_url), "{html}");
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn missing_folder_stays_missing() {
         let found = resolve_mock(
             "Intake/Missing",

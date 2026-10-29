@@ -23,6 +23,43 @@ use crate::server_fns::err_text;
 use crate::server_fns::users::{search_users, AccountRole, UserSummary};
 use crate::state::AppState;
 
+/// Render the selected folder's external link, explaining when it is unavailable.
+pub(crate) fn case_documents_sharepoint_link(found: &CaseDocumentListing) -> AnyView {
+    if found.web_url.starts_with("https://") {
+        view! {
+            <a
+                href=found.web_url.clone()
+                target="_blank"
+                rel="noopener"
+                class="text-xs font-medium text-primary-400 hover:text-primary-300"
+            >
+                "Open in SharePoint \u{2197}"
+            </a>
+        }
+        .into_any()
+    } else {
+        let reason = if found.web_url.starts_with("file://") {
+            "Stored locally; no SharePoint link is available."
+        } else {
+            "No SharePoint link is available for this folder."
+        };
+        view! {
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+                <button
+                    type="button"
+                    disabled
+                    title=reason
+                    class="cursor-not-allowed font-medium text-slate-500"
+                >
+                    "Open in SharePoint \u{2197}"
+                </button>
+                <span class="text-slate-500">{reason}</span>
+            </div>
+        }
+        .into_any()
+    }
+}
+
 /// How many cases the list loads per "page" (each "Load more" click grows the
 /// visible window by this much).
 const PAGE_SIZE: i64 = 10;
@@ -1502,23 +1539,7 @@ pub fn CaseDetail(
                 .into_any()
             };
 
-            // Only offered when the library gives a real link; the on-disk
-            // development store has none worth showing.
-            let open_in_sharepoint = if found.web_url.starts_with("https://") {
-                view! {
-                    <a
-                        href=found.web_url.clone()
-                        target="_blank"
-                        rel="noopener"
-                        class="text-xs font-medium text-primary-400 hover:text-primary-300"
-                    >
-                        "Open in SharePoint \u{2197}"
-                    </a>
-                }
-                .into_any()
-            } else {
-                ().into_any()
-            };
+            let open_in_sharepoint = case_documents_sharepoint_link(&found);
 
             view! {
                 <div>

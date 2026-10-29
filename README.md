@@ -19,6 +19,24 @@ work straight away. To reset it to those fixtures, run
 `cargo run --no-default-features --features ssr -- seed` — which wipes data
 anyone else is using.
 
+### Testing case document links
+
+Without SharePoint configuration, documents use the on-disk store under
+`target/sharepoint/`. Folder navigation, uploads, downloads, and permissions
+work locally, but this store returns `file://` paths rather than SharePoint
+URLs. The Documents panel shows **Open in SharePoint** disabled alongside a
+local-storage explanation. A working link requires a real SharePoint URL;
+the local store cannot provide one.
+
+To verify SharePoint links end to end, use a development SharePoint library
+with the Graph settings described in `.env.example` and `SHAREPOINT_BACKEND=graph`.
+Open a case's Documents section, navigate into each permitted folder and a
+nested folder, and check that **Open in SharePoint** opens that exact folder.
+The link uses the selected folder's URL returned by Graph; it never substitutes
+the case root when a folder URL is missing. Also verify that a client account
+cannot list or navigate into restricted folders. Use development records and
+credentials for this check.
+
 ## View email templates
 
 ```
